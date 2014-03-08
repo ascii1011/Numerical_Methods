@@ -1,0 +1,12 @@
+frmMain = 12, 8, 1048, 380, , 44, 58, 825, 641, C
+frmNevillesMethod = 140, 51, 921, 831, C, 96, 35, 721, 392, C
+frmP1 = 362, 68, 961, 691, , 91, 29, 841, 540, C
+frmGradientDescent = -2, -4, 854, 492, , 4, 26, 871, 719, C
+frmRungaKuta = 124, 38, 885, 629, , 253, 54, 991, 855, C
+mod_vars = 26, 42, 792, 505, C
+frmEulers = 5, 34, 860, 492, , 88, 116, 892, 707, C
+Mod_InverseMatrix = 44, 58, 681, 510, 
+Mod_ReduceMatrix = 110, 145, 747, 597, 
+frmGaussianReduction = 110, 145, 761, 597, C, 88, 116, 739, 568, C
+frmCleverPivoting = 133, 9, 764, 616, , 88, 116, 719, 568, C
+frmWebSites = 110, 145, 718, 597, , 88, 116, 696, 568, C

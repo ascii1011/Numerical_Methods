@@ -1,0 +1,1689 @@
+<HTML>
+
+<head>
+<script language="Javascript">
+
+// ** COPYRIGHT (c) 1998 STEFAN WANER & STEVEN R. COSTENOBLE **
+// ****************** ALL RIGHTS RESERVED *******************
+
+window.onerror = myErrorTrap;
+var errorFlag = 1 // set it to zero to suppress error message.
+
+// var exit = false; // get out of here
+var tab = unescape( "%09" );	// these are now the appropriate strings;
+var cr = unescape( "%0D" );	
+var lf = unescape( "%0A" );
+var symb = unescape( "%C5" );
+var backSlash = unescape( "%5C" );
+var powerSymbol = unescape("%5E");
+
+// var powerSymbol = unescape('%26');	
+// above is amplisand for testing
+var comma = ",";
+var singular = false;
+var msFormat = false;
+var numberActiveMatrices = 0;
+var maxRows = 26;
+var maxCols = 26;
+var inputExpression = ""; 		// the expression to evaluate 
+var numSigDigs = 6;			// default accuracy
+var sigDigMode = true;		// significant digits vs decimal places rounding
+var maxNumberSteps = 11; 		// maximum depth of an iteration
+var bigMatrix = new makeArray3(maxRows,maxCols, maxNumberSteps);
+// hide their dimensions in (maxRows,1) and (1, maxCols)
+// and the name of the matrix in (maxRows, maxCols)
+// now the identity
+for (var i = 1; i <= maxRows-1; i++)
+	{
+	for (var j = 1; j <= maxCols-1; j++)
+		{
+		if (i == j) bigMatrix[maxNumberSteps][i][j] = 1;
+		else bigMatrix[maxNumberSteps][i][j] = 0;
+		} // j
+	} // i
+bigMatrix[maxNumberSteps][maxRows][1] = maxRows-1; // default is a 1x1 matrix
+bigMatrix[maxNumberSteps][1][maxCols] = maxCols-1;
+bigMatrix[maxNumberSteps][maxRows][maxCols] = "I";
+// end of defining the identity
+
+var numberActiveMatrices = 0; // the number of iterations in an expression
+var maxDenom = 10000;  // for fraction approximation
+var tol = .000000001; // for 10 digit accuracy guaranteed cutoff for fractin approx not yet implemented
+var tooBigString = "Too many matrices in your expression," + cr + "or your expression is too complicated." + cr +"Please keep it simple!"
+
+// the Instrucitons
+var theSampleFormulaString = "Enter the matrices in the large text box above and the" + cr +  "formula you want to evaulate in the formula box." + "\n\r" + "Sample formulas are:" + cr + tab;
+var sampleExpressions = "Here are some other expressions you can try:";
+sampleExpressions += cr +tab+ "A*B" + tab + "(product)";
+sampleExpressions += cr+tab+"A*B" + tab + "(sum)";
+sampleExpressions += cr+ tab+"A+(B*C)   or   A+B*C";
+sampleExpressions += cr+ tab+"A - 4*I" + tab + "(I = identity matrix)";
+sampleExpressions += cr + "NOTE ON IDENTITY: When you include 'I' in the formula, it will automatically" + cr + "use the correct size identity matrix." + cr + "If you want to specify a particular size identity matrix, use another" + cr + "name for it and enter it in the top box."
+sampleExpressions += cr+ tab+"A^(-1)" + tab + "(inverse)";
+sampleExpressions += cr+ tab+"A^(2)" + tab + "(powers of A)";
+sampleExpressions += cr + "NOTE ON EXPONENTS: Netscape will give trouble with expressions" + cr + "such as 'A^2', so use 'A^(2)' instead!";
+sampleExpressions += cr + "NOTE ON UPPER CASE: The parser is case sensitive: P is not the same matrix as p."
+
+var theSampleMatrixString = "A = [1, -3, 2" + cr + "0, -3, 22/3" + cr + "6, -4, 1 ]" + cr + cr +"B = [-2, -3, 0" + cr + "-1, 3, 6" + cr + "6, -4, 1 ]" + cr + cr + "C = [ 0.25" + cr + "-3.2" + cr + "-4 ]";
+
+theSampleMatrixString += cr+cr+"Dont forget the square brackets and the commas!"+cr+"Matrix names must be a single letter."+cr+"I is reserved for the identity matrix. You need not type it in."+cr+"To take the transpose of a matrix A, type 'A^T'." + cr + "To compute more than one expression, separate them by commas.";
+// end instructions
+
+
+
+var zero = new makeArray (1, 0); // a 1x1 zero matrix
+var fractionMode = false;
+var okToRoll = true;
+var browserName = navigator.appName;
+var browserVersion = navigator.appVersion;
+if ( (browserName == "Netscape") && (parseInt(browserVersion) >= 3)) browserName = "N";
+else if ( (browserName == "Microsoft Internet Explorer") && (parseInt(browserVersion) >= 3) ) browserName = "M";
+
+// ****************** ERROR HANDLER *************
+function myErrorTrap(message,url,linenumber) {
+if (errorFlag == 1) alert("Sorry, I can't process this." + cr +" Press 'Example' for general information.");
+errorFlag = 1;
+return (true);
+} // end of on error
+
+// ******************** MATH UTILITIES ******************
+function hcf (a,b) {
+var bigger = Math.abs(a);
+var smaller = Math.abs(b);
+var x = 0;
+var theResult = 1;
+if ( (a == 0) || (b == 0) ) return(1);
+if (smaller > bigger) {x = bigger; bigger = smaller;  smaller = x}
+
+var testRatio = roundSigDig(bigger/smaller, 11);
+var testRatio2 = 0;
+if (testRatio == Math.floor(testRatio) ) return (smaller)
+else
+	{
+	// look for a factor of the smaller, deplete it by that factor and multiply bigger by it
+	var found = false;
+	var upperlimit = smaller;
+	for (var i = upperlimit; i >= 2; i--)
+		{
+		testRatio = roundSigDig(smaller/i, 10);
+		testRatio2 = roundSigDig(bigger/i, 10);
+		if  ( (testRatio == Math.floor(testRatio) ) && (testRatio2 == Math.floor(testRatio2) ) )
+			{
+			smaller = Math.round(smaller/i);
+			smaller = Math.round(bigger/i);
+			return(theResult *hcf(bigger, smaller) );
+			}
+		}
+		return(theResult);
+		}
+alert("error!");
+return(-1); // should never get here
+} // hcf
+
+// *** reducing a fraction ***
+function reduce(fraction){
+with (Math)
+	{
+	var HCF = hcf(fraction[1], fraction[2]);
+	fraction[1] = Math.round(fraction[1]/HCF);
+	fraction[2] = Math.round(fraction[2]/HCF);
+	} // with math
+return(fraction);
+} // reduce fraction
+
+
+function toFrac(x, maxDenom, tol) {
+// tolerance is the largest errror you will tolerate before resorting to 
+// expressing the result as the input decimal in fraction form
+// suggest no less than 10^-10, since we round all to 15 decimal places.
+	var theFrac = new Array();
+	theFrac[1] = 0;
+	theFrac[2] = 0;
+	var p1 = 1;
+	var p2 = 0;
+	var q1 = 0;	
+	var q2 = 1;	
+	var u =0;
+	var t = 0;
+	var flag = true;
+	var negflag = false;
+	var a = 0;
+	var xIn = x; // variable for later
+
+	if (x >10000000000) return(theFrac);
+while (flag)
+	{
+	if (x<0) {x = -x; negflag = true; p1 = -p1}
+	var intPart = Math.floor(x);
+	var decimalPart = roundSigDig((x - intPart),15);
+
+	x = decimalPart;
+	a = intPart;
+	
+	t = a*p1 + p2;
+	u = a*q1 + q2;
+	if  ( (Math.abs(t) > 10000000000 ) || (u > maxDenom ) ) 
+		{
+			n = p1;
+			d = q1;
+			break;
+		}
+
+		p = t;
+		q = u;
+			
+//		cout << "cf coeff: " << a << endl; // for debugging
+//		cout << p << "/" << q << endl;	// for debugging
+		
+	if ( x == 0 )
+		{
+		n = p;
+		d = q;
+		break;
+		}
+
+		p2 = p1;
+		p1 = p;
+		q2 = q1;
+		q1 = q;
+		x = 1/x;
+	
+	} // while ( true );
+	
+	theFrac[1] = n;
+	theFrac[2] = d;
+
+	if (theFrac[2] == 1) return (theFrac[1].toString());
+	else return (theFrac[1] + "/" + theFrac[2]);
+
+} // toFrac
+
+
+
+
+function roundSix(theNumber) {
+var x = (Math.round(1000000*theNumber))/1000000;
+return(x);
+}
+
+function shiftRight(theNumber, k) {
+	if (k == 0) return (theNumber)
+	else
+		{
+		var k2 = 1;
+		var num = k;
+		if (num < 0) num = -num;
+		for (var i = 1; i <= num; i++)
+			{
+			k2 = k2*10
+			}
+		}
+	if (k>0) 
+		{return(k2*theNumber)}
+	else 
+		{return(theNumber/k2)}
+	}
+
+function roundSigDig(theNumber, numDigits) {
+	with (Math)
+		{
+		
+		if (theNumber == 0) return(0);
+		else if(abs(theNumber) < 0.000000000001) return(0);
+// WARNING: ignores numbers less than 10^(-12)
+		else
+			{
+			var k = floor(log(abs(theNumber))/log(10))-numDigits+1
+			var k2 = shiftRight(round(shiftRight(abs(theNumber),-k)),k)
+			if (theNumber > 0) return(k2);
+			else return(-k2)
+			} // end else
+		}
+	}
+
+function roundDec(theNumber, numPlaces) {
+	with (Math)
+		{
+		var x =shiftRight(round(shiftRight(theNumber,numPlaces)),-numPlaces);
+		return x;
+		} // with math
+} // roundDec
+
+function looksLikeANumber(theString) {
+// returns true if theString looks like it can be evaluated
+var result = true;
+var length = theString.length;
+var x = ""
+var y = "1234567890-+^*./ "
+var yLength = y.length;
+for (var i = 0; i <= length; i++)
+	{ 
+	x = theString.charAt(i);
+		result = false;
+		for (var j = 0; j <= yLength; j++) 
+			{
+			if (x == y.charAt(j)) {result = true; break}
+			} // j
+	if (result == false) return(false);
+	} // i
+return(result);
+} // looks like a number
+
+
+function isCharHere (InString, RefString)  {
+	if(InString.length!=1) 
+		return (false);
+	if (RefString.indexOf (InString, 0)==-1) 
+		return (false);
+	return (true);
+}
+
+function insertParenAfter(InString, theChar, theSymbolsToEnclose)  {
+// insert open paren after theChar
+// and closes it after the string of symbols (eg a number)
+// needs checkstring
+// does not insert anything if paren already there 
+var outString = "";
+var tempChar = "";
+var stringLength = InString.length;
+if (InString == "") outString = InString;
+else 	{
+
+	for (var i = 0; i <= InString.length; i++)
+		{
+		tempChar = InString.charAt(i);
+		if ((tempChar == theChar) && (InString.charAt(i+1) != unescape ('%28')))
+			{
+			outString += tempChar + unescape ('%28')  
+			for (var j = 1; j <= stringLength - i; j++)
+				{
+				var digit = InString.charAt(i+j);
+				if (!isCharHere(digit, theSymbolsToEnclose) || i+j == stringLength )
+					{
+					// now close parens and advance i
+					outString += unescape ('%29');
+					i += j;
+					j = stringLength;
+					} // if
+				outString += digit;
+				} // j
+			}
+		else outString += tempChar;
+		} // i
+	}
+
+return(outString);
+} // insertParenAfter
+
+
+function checkString(InString,subString,backtrack)
+// check for subString
+// if backtrack = false, returns -1 if not found, and left-most location in string if found
+// if backtrack = true, returns -1 if not found, and right-most location in string if found
+// note that location is to the left of the substring in both cases
+{
+var found = -1;
+var theString = InString;
+var Length = theString.length;
+var symbLength = subString.length;
+for (var i = Length- symbLength; i >-1; i--)
+	{	
+	TempChar=theString.substring (i, i+ symbLength);
+	if (TempChar == subString) 
+			{
+			found = i;
+			if (backtrack) i = -1
+			}
+	} // i
+return(found);
+} // check
+
+
+function parser (InString, Sep)  {
+	NumSeps=1;
+	for (Count=1; Count < InString.length; Count++)  {
+		if (InString.charAt(Count)==Sep)
+			NumSeps++;
+	}
+	parse = new makeArray (NumSeps);
+	Start=0; Count=1; ParseMark=0;
+	LoopCtrl=1;
+	while (LoopCtrl==1)  {
+		ParseMark = InString.indexOf(Sep, ParseMark);
+		TestMark=ParseMark+0;
+		if ((TestMark==0) || (TestMark==-1)){
+			parse[Count]= InString.substring (Start, InString.length);
+			LoopCtrl=0;
+			break;
+		}
+		parse[Count] = InString.substring (Start, ParseMark);
+		Start=ParseMark+1;
+		ParseMark=Start;
+		Count++;
+	}
+	parse[0]=Count;
+	return (parse);
+}
+
+
+function evaluate(theString) {
+if (browserName == "N") return(Math.eval(theString));
+else
+	{
+	var theValue = 0;
+	var Ret = parser(theString,"/");
+	if (Ret[0] == 1) theValue = parseFloat(theString);
+	else theValue = parseFloat(Ret[1])/parseFloat(Ret[2]);
+	return (theValue);
+	}
+}
+
+function replaceChar (InString,oldSymbol,newSymbol)  {
+	var OutString="";
+	var TempChar = "";
+	for (Count=0; Count < InString.length; Count++)  {
+		TempChar=InString.substring (Count, Count+1);
+		if (TempChar!=oldSymbol)
+			OutString=OutString+TempChar
+		else OutString=OutString+newSymbol;
+	}
+	return (OutString);
+}
+
+function replaceSubstring (InString,oldSubstring,newSubstring)  {
+	OutString="";
+	var sublength = oldSubstring.length;
+	for (Count=0; Count < InString.length; Count++)  {
+		TempStr=InString.substring (Count, Count+sublength);
+		TempChar=InString.substring (Count, Count+1);
+		if (TempStr!= oldSubstring)
+			OutString=OutString+TempChar
+		else 
+			{
+			OutString=OutString+ newSubstring;
+			Count +=sublength-1
+			}
+
+	}
+	return (OutString);
+}
+
+
+// ******************** FORM UTILITIES ******************
+
+function sesame(url,hsize,vsize){ 
+// Default size is 550 x 400
+        var tb="toolbar=0,directories=0,status=0,menubar=0"
+        tb+=",scrollbars=1,resizable=1,"
+    var tbend="width="+hsize+",height="+vsize;
+    if(tbend.indexOf("<undefined>")!=-1){tbend="width=550,height=400"}
+        tb+=tbend
+        Win_1 = window.open("","win1",tb);
+        Win_1 = window.open(url,"win1",tb);
+    }
+
+function readSpreadsheet() {
+// ******************************************
+// matrixName is the name of the matrix you want to find.
+// finds and stores the matrix of that name
+// returns a warning if not
+// ******************************************
+
+// first put in some crs because the program likes them 
+// double cr's will be gotten rid of later... 
+
+var theString = document.theSpreadsheet.input.value; 
+theString = stripSpaces(theString);
+theString = replaceChar(theString,lf,cr);	// get rid of those nasty line-feeds 
+theString = replaceSubstring(theString,"[", cr+"["+cr);
+theString = replaceSubstring(theString,"]", cr+"]"+cr);
+// now for some additional flexibility in formatting
+theString = replaceSubstring(theString, ","+cr,cr); // for accidental commas at end of a line
+
+// *** testing *******
+// document.theSpreadsheet.output.value = theSampleMatrixString;
+// document.theSpreadsheet.output.value +=  "\r" +  checkString(theString, cr+cr,false);
+// var matrixName = "A";
+// *** testing *******
+//  alert ("here");
+
+// now get rid of strings of more than one tab and one cr's in a row
+var doubletab = true; var doublecr = true;
+while ( (doubletab) || (doublecr) )
+	{
+	if (checkString(theString,tab+tab,false) == -1) doubletab = false;
+	else theString = replaceSubstring(theString,tab+tab,tab);
+	if (checkString(theString,cr+cr,false) == -1) doublecr = false;
+	else theString = replaceSubstring(theString,cr+cr,cr);
+	}
+theString = replaceSubstring(theString,"="+cr,"="); // prefer "=["
+theString = replaceSubstring(theString,tab+cr,cr); // get rid of tab + crs
+ 
+// get the names of the matrices;
+var tempAr = parser(theString,"=");
+	if (tempAr[0] == -1) { return (0)}
+// *********ERROR TRAP TO TAKE CARE OF
+var numMatrices = tempAr[0]-1;
+
+
+// alert ("numMatrices = " + numMatrices);
+
+for (var v = 1; v <= numMatrices; v++)
+	{
+	numberActiveMatrices += 1;
+if(numberActiveMatrices > maxNumberSteps) { alert("You have too many matrices for me to handle.")}
+// ERROR TRAP FOR TOO MANY HERE
+	tempAr[v] = stripSpaces(tempAr[v]);
+	var l = tempAr[v].length;
+	var tempstr = tempAr[v].substring(l-1,l)
+	var matrixName = tempstr;
+
+// alert("matrixName " + matrixName);	
+	
+
+	var tempString = matrixName + "=[";
+	var X = checkString(theString,tempString,false);
+
+	// X is the position of the start of the matrix
+	if (X == -1) {okToRoll = false; document.theSpreadsheet.output.value = "You have not properly entered a matrix with the name " + matrixName + "." + "\r" + theSampleMatrixString; return(zero)}
+
+	if (numberActiveMatrices > maxNumberSteps) {document.theSpreadsheet.output.value = tooBigString; return(zero)}
+
+
+	X += 2;  // add on the = sign and the "["
+	// Now get the substrting between the braces
+
+// *** testing *******
+// document.theSpreadsheet.output.value +="X = " + X + "theString = " + theString;
+// alert ("pausing");
+// *** testing *******
+
+
+	var endMatrix = -1;
+	var startMatrix = X+2;
+	var length = theString.length;
+	for (var i = X; i <= length; i++)
+		{	
+		TempChar=theString.substring (i, i+ 1);
+		if  (TempChar == "]")
+			{
+			endMatrix = i;
+			break;
+			}
+		} // i
+	if (endMatrix <= startMatrix) {okToRoll = false; document.theSpreadsheet.output.value  +=" Either you have not a right brace at the end of the matrix  "+matrixName + ", \r" + "or the matrtix has no entries."; return(zero)}
+
+	var theMatrixString = theString.substring(startMatrix,endMatrix);
+
+// alert("here");
+// *** testing *******
+// document.theSpreadsheet.output.value += "\r  ***" + theMatrixString + "***";
+// alert("Pausing");
+// *** testing *******
+
+
+	// Now search for tabs and returns
+	var rowArray = parser(theMatrixString,cr);
+	var numRows = rowArray[0]-1; 
+	// note that the zero entry is 1 + the nmber of occurrences
+
+	// too many rows?
+	if (numRows > maxRows-1) {document.theSpreadsheet.output.value = "Too many rows in the matrix " + matrixName + "." + cr + "Please limit the number of rows to " + maxRows-1 + "or fewer."; return(zero)}
+
+	// now replace all crs and tabls by commas since we know the # of rows
+	theMatrixString = replaceSubstring(theMatrixString,tab,",");
+	theMatrixString = replaceSubstring(theMatrixString,cr,",");
+	var entryArray = parser(theMatrixString,",");
+	var numCols = (entryArray[0]-1)/numRows;
+
+	// too many columns?
+	if (numCols > maxCols-1) {document.theSpreadsheet.output.value = "Too many columns in the matrix " + matrixName + "." + cr + "Please limit the number of columns to " + maxCols-1 + "or fewer."; return(zero)}
+
+// *** testing *******
+// document.theSpreadsheet.output.value += "\r" +  "numRows = " + numRows+ "numCols = " + numCols;
+// document.theSpreadsheet.output.value += "\r" + theMatrixString;
+
+// alert("Pausing");
+// *** testing *******
+
+// alert ("about to create a new matrix called$$$" + matrixName + "$$$ matrix number = " + numberActiveMatrices);
+	createNewMatrixData(theMatrixString,numRows,numCols,numberActiveMatrices,matrixName)
+
+	} // v (the big loop)
+
+
+return(zero);
+
+} // read spreadsheet
+
+function createNewMatrixData(theString,numRows, numCols,numberMatrix,matrixName) {
+// ****************Turns a string with commas seperating the elements into
+// *************** a matrix level of bigMatrix
+// alert ("here");
+var tempMatrix = new makeArray2(maxRows,maxCols);
+var entryArray = parser(theString,",");
+var k = 1; // first entry in the above array
+for (i = 1; i <= numRows; i++)
+	{
+	for (j = 1; j <= numCols; j++)
+		{
+// alert(entryArray[k]);
+		tempMatrix[i][j] = eval(entryArray[k]);
+		k++;
+		} // j
+	} // i
+
+tempMatrix[maxRows][1] = numRows;
+tempMatrix[1][maxCols] = numCols;
+
+
+
+tempMatrix[maxRows][maxCols] = matrixName;
+
+bigMatrix[numberMatrix] = tempMatrix;
+
+// *** testing starts *******
+// var display = "\r";
+// for (i = 1; i <= numRows; i++)
+//	{
+//	for (j = 1; j <= numCols; j++)
+//		{
+//		display += tempMatrix[i][j]  + tab;
+//		} // j
+//	display += cr;
+//	} // i
+// document.theSpreadsheet.output.value += display;
+// alert("Pausing");
+// *** testing *******
+
+return(0);
+
+} // createNewMatrix
+
+
+// ******************* PARSER FOLLOWS  **************************
+
+function preProcess(InString) {
+
+var theString = InString; 
+singular = false; // reset singular
+// ********** Binary Operators *************
+
+// first put some parentheses around exponents to fix a curious bug
+// we allow T in exponent as well  
+// first adjust for pnegative powers bu substituting first
+// alert(theString);
+
+theString = replaceSubstring(theString,powerSymbol+'T', '#T');  // transpose
+theString = replaceSubstring(theString,powerSymbol+'t', '#T');
+theString = replaceSubstring(theString,powerSymbol+'-', powerSymbol+'$');
+theString = insertParenAfter(theString, powerSymbol, '$0123456789T')
+theString = replaceChar(theString,'$', '-');
+
+
+// alert(theString);
+var maxExpressionLength = 50;
+var posn = new makeArray(maxExpressionLength); // position of a binary operator
+var oper = new makeArray(4);
+for (var i = 1; i <= maxExpressionLength; i++) posn[i] = -1;
+oper[1] = powerSymbol; 
+oper[2] = "#";
+oper[3] = "*";
+oper[4] = "-";
+oper[5] = "+";
+
+var numOperations = 5;
+for (i = 1; i <= numOperations; i++) 
+	{
+	theString = replaceSubstring(theString,oper[i],symb+oper[i]);
+	}
+// will remove the extra symbol when processed
+// alert(theString);
+for (i = 1; i <= numOperations; i++)
+	{ 
+	posn[i] = checkString(theString,symb+oper[i],false);
+	var count = 0;
+	while ( (posn[i] != -1) && (count < 300) )
+		{
+		count ++;
+// alert (theString);
+		theString = processInfix(theString,oper[i], posn[i]);
+// alert (theString);
+		posn[i] = checkString(theString, symb+oper[i], false);
+		} // while posn[i]... 
+	} // for i = ...
+// alert(theString);
+return (theString);
+} // end of preprocess
+
+ // ******************* END PREPROCESS
+
+function processInfix(InString, operation, position) {
+// position is one before the operation  ... symb*
+var leftPart = InString.substring(0,position);
+var Length = InString.length;
+// alert(leftPart);
+var rightPart = InString.substring(position+2,Length);
+
+// now watch out for numbers added or negative exponents
+// remove the symbols from these without doing anything
+var theOp = InString.charAt(position+1);
+if (theOp == "-")
+	{
+	var theExpr = rightPart.charAt(0);
+
+	if (looksLikeANumber(theExpr) && (leftPart.charAt(position) == "(") ) 
+		{// alert(leftPart + theOp + rightPart);
+		return(leftPart + theOp + rightPart);}
+	}
+else 
+	{
+	var theExpr = leftPart.charAt(position)+ "+" + rightPart.charAt(0);
+	if (looksLikeANumber(theExpr)) 
+		{// alert(leftPart + theOp + rightPart); 
+		return(leftPart + theOp + rightPart);}
+
+	}
+
+// now scan leftward until another cent sign or beginning of the string
+var backMark = position; 
+var parencount = 0;
+var putParen = false;
+for (var i = position-1; i >-1; i--)
+	{
+	var theChar = leftPart.charAt(i);
+// alert(theChar);
+	if (theChar == ")") parencount++;
+	else if (theChar == "(") parencount--;
+	
+	if ( (parencount <= 0) &&(  (theChar == symb) || ( i == 0) || (parencount < 0) ) )
+	// looks like a place for a left paren
+		{
+		if (theChar == symb)  backMark = i+2;
+		else backMark = i;
+// alert("i = "+i);
+		break;
+		}
+	} // i
+
+// now to the right
+var foreMark = 0;
+var rLength = rightPart.length; 
+	
+var parencount = 0;
+for (var i = 0; i <= rLength; i++)
+	{
+	var theChar = rightPart.charAt(i);
+	if (theChar == "(") parencount++;
+	else if (theChar == ")") parencount--;
+
+	if ( (parencount <= 0) && ( (theChar == symb) || (i == rLength) || (parencount < 0) ) )
+	// looks like a place for a right paren
+		{
+		if (theChar == symb) foreMark = i;
+		else foreMark = i+1;
+		break;
+		}		
+	
+	} // i
+
+// alert("backMark = " + backMark);
+// alert("foreMark = " + foreMark);
+
+var leftString = leftPart.substring(backMark,position);
+var rightString = rightPart.substring(0,foreMark);
+	
+	var theString = leftPart.substring(0,backMark) + "(" + leftString + operation + rightString + ")" + rightPart.substring(foreMark,rLength);
+	
+// alert(theString);
+return (theString);
+}
+
+
+function extractAndProcess(InString){ 
+
+// if (exit) return("");
+// alert ("here");
+// extract innermost operation (---) and sends it off for Processing
+
+// alert(InString);
+
+var looking = true;
+theString = InString;
+var test = lookup(theString);
+if (test != -1)
+	{numberActiveMatrices = test; Process(theString,true); return ("")}
+
+
+var Length = theString.length;
+var theExpression = "";
+var startExpression = checkString(theString,"(",true);
+// alert (startExpression);
+
+// if no parentheses, only one step
+if (startExpression == -1) 
+	{
+	// alert ("here"); 
+	Process(theString,true); 
+	return ("");
+	}
+
+var mark = startExpression + 1;
+var parenCount = 1;
+while  ( (mark < Length) && (parenCount > 0) )
+	{
+	TempChar=theString.substring (mark, mark+1);
+	if (TempChar == "(") parenCount++;
+	else if (TempChar == ")") parenCount--;
+	mark++;
+	}
+if (parenCount == 0) theExpression = theString.substring(startExpression+1,mark-1);
+else {document.theSpreadsheet.output.value = "There is a syntax error in your expression!"+ cr + "(Unmatched parentheses)"; return('')};
+
+var leftString = theString.substring(0, startExpression);
+
+var rightString = theString.substring(mark, Length);
+
+// alert("we are about to process the expression" + theExpression);
+
+var midString = Process(theExpression,false); 
+// alert ("we are reprocessing the String "+ leftString+midString+rightString);
+extractAndProcess(leftString+midString+rightString);
+return ("");
+} // Process and extract
+
+
+function Process(theExpression,lastStep) {
+
+// *** here the work is done
+if (singular) lastStep = true;
+
+var posnExp = checkString(theExpression, powerSymbol, false);
+var posnTranspose = checkString(theExpression, "#", false);
+var posnTimes = checkString(theExpression,"*",false);
+var posnPlus = checkString(theExpression,"+",false);
+var posnMinus = checkString(theExpression,"-",false);
+if (looksLikeANumber(theExpression)) return (eval(theExpression));
+else if ( (lastStep == false) &&  (posnExp == -1) && (posnTimes == -1) && (posnPlus == -1) && (posnMinus == -1) && (posnTranspose == -1) ) return (theExpression);
+
+else if (posnTranspose > -1) 
+	{
+	numberActiveMatrices += 1;
+// alert ("numberActiveMatrices = " + numberActiveMatrices);
+	// too many steps?
+	if (numberActiveMatrices > maxNumberSteps) {document.theSpreadsheet.output.value = tooBigString; return("")}
+	
+	// now do the work...
+	theExpression = stripSpaces(theExpression);
+	var leftMatrix = lookup(theExpression.substring(0, posnTranspose));
+if (leftMatrix == -1) alert("You have not entered a matrix called " + theExpression + "." + cr + "You will probably get an error message now.");
+// alert("The matrix looked up is called " + theExpression.substring(0, posnTranspose) );
+// alert("leftMatrix number = " + leftMatrix);
+	var leftRowNum = bigMatrix[leftMatrix][maxRows][1];
+	var leftColNum = bigMatrix[leftMatrix][1][maxCols];
+
+	var tempMatrix = new makeArray2(leftColNum, leftRowNum); // Note the reversal
+	for (var i = 1; i <= leftColNum; i++)
+		{
+		for (j = 1; j <= leftRowNum; j++) tempMatrix[i][j] = bigMatrix[leftMatrix][j][i]; // transpose
+		} // i
+	// fix up bigMatrix by adding new data
+	for (var i = 1; i <= leftColNum; i++)
+		{
+		for (j = 1; j <= leftRowNum; j++) bigMatrix[numberActiveMatrices][i][j] = tempMatrix[i][j]
+		} // i
+	bigMatrix[numberActiveMatrices][maxRows][1] = leftColNum;
+	bigMatrix[numberActiveMatrices][1][maxCols] = leftRowNum;
+	bigMatrix[numberActiveMatrices][maxRows][maxCols] = "STEF"+ numberActiveMatrices;
+	
+	
+	} // end of transpose
+
+
+
+else if (posnExp > -1) 
+	{
+	numberActiveMatrices += 1;
+// alert ("numberActiveMatrices = " + numberActiveMatrices);
+	// too many steps?
+	if (numberActiveMatrices > maxNumberSteps) {document.theSpreadsheet.output.value = tooBigString; return("")}
+	
+	// now do the work...
+	theExpression = stripSpaces(theExpression);
+	var leftMatrix = lookup(theExpression.substring(0,posnExp));
+if (leftMatrix == -1) alert("You have not entered a matrix called " + theExpression + "." + cr + "You will probably get an error message now.");
+// alert("The matrix looked up is called " + theExpression.substring(0,posnExp) );
+// alert("leftMatrix number = " + leftMatrix);
+	var leftRowNum = bigMatrix[leftMatrix][maxRows][1];
+	var leftColNum = bigMatrix[leftMatrix][1][maxCols];
+	var exponent = eval(theExpression.substring(posnExp+1,theExpression.length))
+
+	var tempMatrix = new makeArray2(leftRowNum, leftColNum);
+	for (var i = 1; i <= leftRowNum; i++)
+		{
+		for (j = 1; j <= leftColNum; j++) tempMatrix[i][j] = bigMatrix[leftMatrix][i][j];
+		} // i
+// alert("About to take the power with exponent = " + exponent);
+	if (exponent > 0) tempMatrix = Power(tempMatrix,exponent);
+	else if (exponent < 0) tempMatrix = Power(inverse(tempMatrix),-exponent);
+
+	// fix up bigMatrix by adding new data
+	for (var i = 1; i <= leftRowNum; i++)
+		{
+		for (j = 1; j <= leftColNum; j++) bigMatrix[numberActiveMatrices][i][j] = tempMatrix[i][j]
+		} // i
+	bigMatrix[numberActiveMatrices][maxRows][1] = leftRowNum;
+	bigMatrix[numberActiveMatrices][1][maxCols] = leftColNum;
+	bigMatrix[numberActiveMatrices][maxRows][maxCols] = "STEF"+ numberActiveMatrices;
+	
+	
+	} // end of exp
+
+else if ( (posnTimes > -1) || (posnPlus > -1) || (posnMinus > -1) )
+	{
+	if (posnTimes > -1) theOperation = "times";
+	else if (posnPlus > -1) theOperation = "plus";
+	else theOperation = "minus";
+	numberActiveMatrices += 1;
+// alert ("numberActiveMatrices = " + numberActiveMatrices);
+	// too many steps?
+	if (numberActiveMatrices > maxNumberSteps) {document.theSpreadsheet.output.value = tooBigString; return("")}
+	// now do the work...
+	theExpression = stripSpaces(theExpression);
+
+	var posn = posnTimes;
+	if (theOperation == "plus") posn = posnPlus;
+	else if (theOperation == "minus") posn = posnMinus;
+	
+	var leftTerm = theExpression.substring(0,posn);
+	var rightTerm = theExpression.substring(posn+1,theExpression.length)
+
+	// now take care of scalar multiplication
+	if (theOperation == "times")
+		{
+		if (looksLikeANumber(leftTerm)) 
+			{
+			theOperation = "leftScMult";
+			}
+		else if (looksLikeANumber(rightTerm))
+			{
+			theOperation = "rightScMult";
+			}
+		}
+
+// first dispense with scalar multiplcation
+if ( (theOperation == "leftScMult") ||( theOperation == "rightScMult") )
+		{
+		if (theOperation == "leftScMult") 
+			{
+			var theMatrix = lookup(rightTerm); 
+			var theScalar = eval(leftTerm);
+			if (theMatrix == -1) alert( "You have not entered a matrix called " + rightTerm + "." + cr + "You will probably get an error message now.");
+			}
+		else 
+			{ 
+			var theMatrix = lookup(leftTerm); 
+			var theScalar = eval(rightTerm);
+			if (theMatrix == -1) alert("You have not entered a matrix called " + leftTerm + "." + cr + "You will probably get an error message now.");
+			}
+		var RowNum = bigMatrix[theMatrix][maxRows][1];
+		var ColNum = bigMatrix[theMatrix][1][maxCols];
+		var tempMatrix = new makeArray2(RowNum, ColNum);
+		for (var i = 1; i <= RowNum; i++)
+			{
+			for (j = 1; j <= ColNum; j++) tempMatrix[i][j] = bigMatrix[theMatrix][i][j];
+			} // i
+		tempMatrix =  scmult(theScalar,tempMatrix);
+// fix up bigMatrix by adding new data
+		for (var i = 1; i <= RowNum; i++)
+			{
+			for (j = 1; j <= ColNum; j++) bigMatrix[numberActiveMatrices][i][j] = tempMatrix[i][j]
+			} // i
+		bigMatrix[numberActiveMatrices][maxRows][1] = RowNum;
+		bigMatrix[numberActiveMatrices][1][maxCols] = ColNum;
+		var theName = "STEF";
+		if (bigMatrix[theMatrix][maxRows][maxCols].charAt(0) == "I") theName = "ISTEF";
+		bigMatrix[numberActiveMatrices][maxRows][maxCols] = theName + numberActiveMatrices;
+
+
+		} // end of scalar mult dont forget ELSE
+
+
+	else 
+		{
+	// not scalar mult; therefore addition or matrix mult
+
+// alert("The matrix looked up is called " + theExpression.substring(0,posn) );
+// alert("leftMatrix number = " + leftMatrix);
+		var leftMatrix = lookup(leftTerm); 
+		if (leftMatrix == -1) alert( "You have not entered a matrix called " + leftTerm + "." + cr + "You will probably get an error message now.");
+		var rightMatrix = lookup(rightTerm);
+		if (rightMatrix == -1) alert("You have not entered a matrix called " + rightTerm + "." + cr + "You will probably get an error message now.");
+
+		// dimensions...
+		if ( bigMatrix[leftMatrix][maxRows][maxCols].charAt(0) =="I")
+			{
+		var rightRowNum = bigMatrix[rightMatrix][maxRows][1];
+		var rightColNum = bigMatrix[rightMatrix][1][maxCols];
+		var leftRowNum = rightRowNum;
+		var leftColNum = rightRowNum;
+			}
+		else if  ( bigMatrix[rightMatrix][maxRows][maxCols].charAt(0) =="I")
+			{
+		var leftRowNum = bigMatrix[leftMatrix][maxRows][1];
+		var leftColNum = bigMatrix[leftMatrix][1][maxCols];
+		var rightRowNum = leftColNum;
+		var rightColNum = leftColNum;
+			}
+		else
+			{
+		var leftRowNum = bigMatrix[leftMatrix][maxRows][1];
+		var leftColNum = bigMatrix[leftMatrix][1][maxCols];
+		var rightRowNum = bigMatrix[rightMatrix][maxRows][1];
+		var rightColNum = bigMatrix[rightMatrix][1][maxCols];
+			}
+
+		var tempMatrix1 = new makeArray2(leftRowNum, leftColNum);
+		for (var i = 1; i <= leftRowNum; i++)
+			{
+			for (j = 1; j <= leftColNum; j++) tempMatrix1[i][j] = bigMatrix[leftMatrix][i][j];
+			} // i
+
+		var tempMatrix2 = new makeArray2(rightRowNum, rightColNum);
+		for (var i = 1; i <= rightRowNum; i++)
+			{
+			for (j = 1; j <= rightColNum; j++) tempMatrix2[i][j] = bigMatrix[rightMatrix][i][j];
+			} // i
+		var tempMatrix = new makeArray2(leftRowNum, rightColNum);
+
+// alert("About to take the product/sum with exponent = " + exponent);
+	if (theOperation == "times") tempMatrix = times(tempMatrix1,tempMatrix2);
+	else if (theOperation == "plus") tempMatrix = plus(tempMatrix1,tempMatrix2);
+	else if (theOperation == "minus") tempMatrix = plus(tempMatrix1,scmult(-1,tempMatrix2));
+
+	// fix up bigMatrix by adding new data
+	for (var i = 1; i <= leftRowNum; i++)
+		{
+		for (j = 1; j <= rightColNum; j++) bigMatrix[numberActiveMatrices][i][j] = tempMatrix[i][j]
+		} // i
+	bigMatrix[numberActiveMatrices][maxRows][1] = leftRowNum;
+	bigMatrix[numberActiveMatrices][1][maxCols] = rightColNum;
+	bigMatrix[numberActiveMatrices][maxRows][maxCols] = "STEF"+ numberActiveMatrices;
+	
+	} // end of if not scalar mult
+	} // end of sum&product
+
+
+
+if (lastStep) displayMatrix(numberActiveMatrices);
+else return(bigMatrix[numberActiveMatrices][maxRows][maxCols]); // the new matrix name is *1, *2, etc.
+} // Process *********************
+
+
+
+function displayMatrix(number) {
+var theString = "";
+theString += inputExpression + " = " + cr;
+// alert(singular);
+if (singular) theString += "undefined";
+
+else if (msFormat) 
+	{
+	var RowNum = bigMatrix[number][maxRows][1];
+	var ColNum = bigMatrix[number][1][maxCols];
+	theString = "EQ " + backSlash+ "B"+backSlash+"BC"+ backSlash+"[("+ backSlash+"A"+ backSlash+"HS10"+ backSlash+"CO"+ColNum+"(";
+// alert(theString);
+	for (i = 1; i <= RowNum; i++)
+		{
+		for (j = 1; j <= ColNum; j++) 
+			{ 
+			if (fractionMode) x = toFrac (roundSigDig(bigMatrix[number][i][j],15), maxDenom, tol);  else
+			{
+			if (sigDigMode) x = roundSigDig(bigMatrix[number][i][j], numSigDigs).toString();
+			else x = roundDec(bigMatrix[number][i][j], numSigDigs).toString();
+			} // non fraction mode
+			theString += x;
+			if ( (i < RowNum) ||  (j < ColNum ) ) theString += ",";
+			} // j
+		} // i
+	theString += "))";
+	// alert(theString);
+	}
+else
+{
+var RowNum = bigMatrix[number][maxRows][1];
+var ColNum = bigMatrix[number][1][maxCols];
+// alert("about to display a "+ RowNum+ " x " + ColNum + "matrix");
+// first round all the results and get the longest resulting string
+var maxLength = 1;
+var x = "", i=0, j=0, k=0;
+var xLen = 0;
+var displayTempMatrix = new makeArray2(RowNum,ColNum);
+
+for (i = 1; i <= RowNum; i++)
+	{
+	for (j = 1; j <= ColNum; j++) 
+		{ 
+
+// not yet implemented
+if (fractionMode) x = toFrac (roundSigDig(bigMatrix[number][i][j],15) , maxDenom, tol);  
+	else 
+
+		{
+		if (sigDigMode) x = roundSigDig(bigMatrix[number][i][j], numSigDigs).toString();
+		else x = roundDec(bigMatrix[number][i][j], numSigDigs).toString();
+		} // non fraction mode
+	
+		xLen = x.length; 
+// alert("xLen =" + xLen);		
+		if (xLen > maxLength) maxLength = xLen; 
+
+		displayTempMatrix[i][j] = x; 
+	
+		} // j
+	} // i
+
+	var spaceString = "";
+	for (i = 1; i <= RowNum; i++)
+		{
+		
+		for (j = 1; j <= ColNum; j++) 
+			{ 
+			x = displayTempMatrix[i][j];
+			sp = maxLength - x.length
+			spaceString = "";
+			for (k = 0; k <= sp; k++) spaceString += " ";
+			theString += x + spaceString + tab;
+			} // j
+		theString += cr;
+		} // i
+} // if not singular
+document.theSpreadsheet.output.value += theString + cr;
+// remove the plus above when done debugging
+// numberActiveMatrices = 0; // reset active matrices to 0;
+// alert(theString);
+return(0);
+}
+
+
+
+function lookup(InString) {
+var theResult = -1;
+for (var i = 1; i <= maxNumberSteps; i++)
+	{
+	// if (i <= 3) alert("i = " + i + " " + bigMatrix[i][maxRows][maxCols]);
+	if (bigMatrix[i][maxRows][maxCols] == InString) theResult = i;
+	}
+return (theResult);
+} // lookup
+//*************************** end extractAndProcess *********************
+
+// ***** HERE ********
+// now search forward fot first tab and/or cr and return data
+// first just count tabs and returns using the parser function #returns = #rows
+// #columns = (#tabbs)/(#rows)
+
+
+
+function clearSpreadsheet(){
+if (browserName == "N") 
+	{ 
+	document.theSpreadsheet.power.value = "2"; 
+	document.theSpreadsheet.power2.value = "2";
+	var count = 0;
+	for (var i = 1; i <= 6; i++)
+		{ 
+		document.theSpreadsheet.vector[i-1].value = "";
+		for (var j = 1; j <= 6; j++)
+			{
+			document.theSpreadsheet.string[count].value = "";
+			count++;
+			} // j
+		} // i
+	}
+else if (browserName == "M")
+	{
+	for (var i = 0; i <=41; i++) document.theSpreadsheet[i].value = "";
+	document.theSpreadsheet.power.value = "2"; 
+	document.theSpreadsheet.power2.value = "2";
+	}
+}
+
+
+function clearAnswer(){
+if (browserName == "N")
+	{
+	var count = 0;
+	for (var i = 1; i <= 6; i++)
+		{ 
+		for (var j = 1; j <= 6; j++)
+			{
+			document.theAnswer.string[count].value = "";
+			count++;
+			} // j
+		} // i
+	}
+else if (browserName == "M")
+	{
+	for (var i = 0; i <=35; i++) document.theAnswer[i].value = "";
+	}
+}
+
+
+function makeArray3 (X,Y,Z)
+	{
+	var count;
+	this.length = X+1;
+	for (var count = 1; count <= X+1; count++)
+		// to allow starting at 1
+		this[count] = new makeArray2(Y,Z);
+	} // makeArray3
+
+
+function makeArray2 (X,Y)
+	{
+	var count;
+	this.length = X+1;
+	for (var count = 1; count <= X+1; count++)
+		// to allow starting at 1
+		this[count] = new makeArray(Y);
+	} // makeArray2
+
+function makeArray (Y)
+	{
+	var count;
+	this.length = Y+1;
+	for (var count = 1; count <= Y+1; count++)
+		this[count] = 0;
+	} // makeArray
+
+function det(A)
+	{
+	var Length = A.length-1;
+		// formal length of a matrix is one bigger
+	if (Length == 1) return (A[1][1]);
+	else
+		{
+		var i;
+		var sum = 0;
+		var factor = 1;
+		for (var i = 1; i <= Length; i++)
+			{
+			if (A[1][i] != 0)
+				{
+				// create the minor
+				minor = new makeArray2(Length-1,Length-1);
+				var m;
+				var n;
+				var theColumn;
+				for (var m = 1; m <= Length-1; m++) // columns
+					{
+					if (m < i) theColumn = m;
+					else theColumn = m+1;
+					for (var n = 1; n <= Length-1; n++)
+						{
+						minor[n][m] = A[n+1][theColumn];
+// alert(minor[n][m]);
+						} // n
+					} // m
+				// compute its determinant
+				sum = sum + A[1][i]*factor*det(minor);
+				}
+			factor = -factor;	// alternating sum
+			} // end i
+		} // recursion
+	return(sum);
+	} // end determinant
+
+function inverse(A) {
+	var Length = A.length - 1;
+	B = new makeArray2(Length, Length);  // inverse
+	var d = det(A);
+	if ( (Length == 1) && (d != 0) ) 
+		{
+		B[1][1] = 1/A[1][1];
+		return (B);
+		}
+	if (d == 0) 
+		{
+		alert("singular matrix--check data");
+		singular = true;
+		}
+	else
+		{
+		var i;
+		var j;
+		for (var i = 1; i <= Length; i++)
+			{
+			for (var j = 1; j <= Length; j++)
+				{
+				// create the minor
+				minor = new makeArray2(Length-1,Length-1);
+				var m;
+				var n;
+				var theColumn;
+				var theRow;
+				for (var m = 1; m <= Length-1; m++) // columns
+					{
+					if (m < j) theColumn = m;
+					else theColumn = m+1;
+					for (var n = 1; n <= Length-1; n++)
+						{
+						if (n < i) theRow = n;
+						else theRow = n+1;
+						minor[n][m] = A[theRow][theColumn];
+// alert(minor[n][m]);
+						} // n
+					} // m
+				// inverse entry
+				var temp = (i+j)/2;
+				if (temp == Math.round(temp)) factor = 1;
+				else factor = -1;
+				
+				B[j][i] =  det(minor)*factor/d; 
+
+				
+				} // j
+			
+			} // end i
+		} // recursion
+	return(B);
+	} // end inverse
+
+function Power(theMatrix,n){
+	// first square it up a few times;
+
+if ( (browserName == "N") || (browserName == "M") )
+	{ 	
+	var negExponent = false;
+	with (Math)
+		{
+		var Length = theMatrix.length-1;
+		theProd = new makeArray2(Length, Length);
+		if (n < 0) { negExponent = true; n = -n}
+		theProd = theMatrix;
+		var m = floor(log(n)/log(2));
+		for (var j = 1; j <= m; j++) theProd= times(theProd, theProd);
+		var leftover = n - round(pow(2,m));
+		for (var j = 1; j <= leftover; j++) theProd = times(theMatrix,theProd);
+		} // end with Math 
+	if (negExponent) theProd = inverse(theProd);
+	return (theProd);
+	}
+}
+
+
+function times(theMatrixA, theMatrixB)
+ 	{
+  	var Length1 = theMatrixA.length-1;
+	var Length2 = theMatrixB[1].length-1; 
+	var Length3 = theMatrixA[1].length-1;
+	if (Length3 != theMatrixB.length - 1) {
+		alert("Two matrices in the expression cannot be multiplied because the dimensions are wrong.");
+		okToRoll = false;
+		errorFlag = 0;
+		}
+	else
+	{
+		theProduct = new makeArray2(Length1, Length2);
+
+		for (var i = 1; i <= Length1; i++)
+		{
+		for (var j = 1; j <= Length2; j++)
+			{
+			theProduct[i][j]=0;
+			for (var k = 1; k <= Length3; k++)
+				{
+				theProduct[i][j]+=theMatrixA[i][k]*theMatrixB[k][j];
+				}// k
+			} // j
+		} // i
+
+// *** testing *******
+// var theString2 = "AB = " + cr;
+// for (var i = 1; i <= Length1; i++)
+//	{
+//	for (var j = 1; j <= Length2; j++) theString2 += theProduct[i][j] + tab;
+//	theString2 += cr;
+//	}
+// theString2 += "B = "+cr;
+// for (var i = 1; i <= Length3; i++)
+//	{
+//	for (var j = 1; j <= Length2; j++) theString2 += theMatrixB[i][j] + tab;
+//	theString2 += cr;
+//	}
+// document.theSpreadsheet.output.value += theString2;
+// *** testing *******
+		return (theProduct);
+	} //end else
+		}
+
+// *** Scalar Multiplication
+function scmult(theScalar, theMatrix)
+ 	{
+  	var Length1 = theMatrix.length-1;
+	var Length2 = theMatrix[1].length-1; 
+	theAnswer = new makeArray2(Length1, Length2);
+	for (var i = 1; i <= Length1; i++)
+	{
+	for (var j = 1; j <= Length2; j++)
+		{
+		theAnswer [i][j]= theScalar*theMatrix[i][j];
+		} // j
+	} // i
+	return (theAnswer);
+	}
+
+function plus(theMatrixA, theMatrixB)
+ 	{
+  	var Length1 = theMatrixA.length-1;
+	var Length2 = theMatrixA[1].length-1; 
+	var Length3 = theMatrixB.length-1;
+	var Length4 = theMatrixB[1].length-1;
+	if ((Length1 != Length3)|| (Length2 != Length4)) {
+		alert("Two matrices in the expression cannot be added because their dimensions do not match.");
+		okToRoll = false;
+		errorFlag = 0;
+		}
+	else {
+		theSum = new makeArray2(Length1, Length2);
+		for (var i = 1; i <= Length1; i++)
+		{
+		for (var j = 1; j <= Length2; j++)
+			{
+			theSum[i][j]= theMatrixA[i][j]+theMatrixB[i][j];
+			} // j
+		} // i
+		return (theSum);
+		} // end else
+	}
+
+
+function stripSpaces (InString)  {
+	OutString="";
+	for (Count=0; Count < InString.length; Count++)  {
+		TempChar=InString.substring (Count, Count+1);
+		if (TempChar!=" ")
+			OutString=OutString+TempChar;
+		}
+	return (OutString);
+	}
+
+function doIt(){
+	
+	fractionMode = document.theSpreadsheet.fracModeButton.checked;
+	var num = doIt.arguments[0];
+
+	//**********
+
+	// Option 1 clear
+	if (num == 1)
+		{
+		
+		}
+
+	// Option 2
+	else  if (num == 2)
+		{
+		
+		}
+	
+	// Option 3 (Erase)
+	else  if (num == 3)
+		{
+		document.theSpreadsheet.input.value = "";
+		document.theSpreadsheet.output.value = "";
+		document.theSpreadsheet.expr.value = "";
+		}
+
+	// compute the expression
+	else  if (num == 4)
+		{ // alert ("here");
+		// reset some global variables
+		numberActiveMatrices = 0;
+	
+		okToRoll = true;
+		
+		var accuracydig = document.theSpreadsheet.acc.value;
+		var theIndex1 = document.theSpreadsheet.S.selectedIndex;
+		if  (document.theSpreadsheet.S.options[theIndex1].text == "significant digits") sigDigMode = true;
+		else sigDigMode = false;
+		if ( (accuracydig == "") || (!looksLikeANumber(accuracydig)) ) { document.theSpreadsheet.output.value = "Enter a value for the accuracy (Rounding) in the range 1-13."; okToRoll = false}
+
+		if (okToRoll)
+			{ 
+			var thenum = eval(accuracydig); 
+			if ((thenum < 1) || (thenum > 14)) {document.theSpreadsheet.output.value = "Accuracy (Rounding) must be in the range 1-13."; okToRoll = false}
+			else numSigDigs =thenum;		
+			} // if okToRoll
+	
+
+		
+		msFormat = document.theSpreadsheet.msFormatButton.checked;
+		var theExpression = "";
+		var theInputString = stripSpaces(document.theSpreadsheet.expr.value);
+		var exprs = parser(theInputString,",");
+// alert(exprs[0] + "    " + exprs[1] + "    " + exprs[2])
+		// clear output
+		document.theSpreadsheet.output.value = "";
+		for (var numFormula = 1; numFormula <= exprs[0]; numFormula++) {
+			theExpression = exprs[numFormula];
+			if ((okToRoll) && (theExpression == "") && (exprs[0] <= 1) ) document.theSpreadsheet.output.value += "You must enter expression(s) to evaluate!";
+			else if ((okToRoll) && (theExpression == "")) document.theSpreadsheet.output.value += "There must be an expression after each comma.";
+
+				
+		
+		
+			else if (okToRoll) 
+				{ 
+				// the next two steps are inefficient
+				// The first is to stop larger & l;arger numbers of inermediate matrices
+				// the second is that it seems to forget what it reads.
+				numberActiveMatrices = 0; 
+				readSpreadsheet();
+				inputExpression = theExpression;
+				// alert(theExpression);
+				theExpression = preProcess(theExpression);
+				extractAndProcess(theExpression);
+				}
+
+
+			} // end loop
+
+
+
+	
+	
+	} // of this option
+
+	// Option 5
+	else  if (num == 5)
+		{
+		document.theSpreadsheet.input.value = theSampleMatrixString;
+		document.theSpreadsheet.expr.value = "(A+B)*C, (I-A)^-1";
+		document.theSpreadsheet.output.value = "Press 'Compute' to calculate the above expressions." + cr + sampleExpressions;
+		}
+	// Option 6 determinant of current matrix
+	else  if (num == 6)
+		{
+		
+// alert ("here");
+		// reset some global variables
+		okToRoll = true;
+		fractionMode = document.theSpreadsheet.fracModeButton.checked;
+		numberActiveMatrices = 0;
+
+		// reset some global variables.. . this duplicates the beginning of option 4.
+		
+		var accuracydig = document.theSpreadsheet.acc.value;
+		var theIndex1 = document.theSpreadsheet.S.selectedIndex;
+		if  (document.theSpreadsheet.S.options[theIndex1].text == "significant digits") sigDigMode = true;
+		else sigDigMode = false;
+		if ( (accuracydig == "") || (!looksLikeANumber(accuracydig)) ) { document.theSpreadsheet.output.value = "Enter a value for the accuracy (Rounding) in the range 1-13."; okToRoll = false}
+
+		if (okToRoll)
+			{ 
+			var thenum = eval(accuracydig); 
+			if ((thenum < 1) || (thenum > 14)) {document.theSpreadsheet.output.value = "Accuracy (Rounding) must be in the range 1-13."; okToRoll = false}
+			
+			else numSigDigs =thenum;		
+			} // if okToRoll
+		// end of the reset
+
+		var theExpression = stripSpaces(document.theSpreadsheet.expr.value);
+		if ((okToRoll) &&(theExpression == ""))
+document.theSpreadsheet.output.value = "You must enter an expression to evaluate!";
+		
+		
+		else if (okToRoll)
+		{ 
+		inputExpression = theExpression;
+		// alert(theExpression);
+		readSpreadsheet();
+		theExpression = preProcess(theExpression);
+		extractAndProcess(theExpression);
+	
+
+		} // if zero
+	
+			var RowNum = bigMatrix[numberActiveMatrices][maxRows][1];
+			var ColNum = bigMatrix[numberActiveMatrices][1][maxCols];
+			if (ColNum != RowNum) document.theSpreadsheet.output.value += cr+"How am I supposed to find the determinant of a non-square matrix?";
+			else
+				{
+				var tempMatrix = new makeArray2(RowNum, ColNum)
+				for (var i = 1; i <= RowNum; i++)
+					{
+					for (j = 1; j <= ColNum; j++)  tempMatrix[i][j] = eval(bigMatrix[numberActiveMatrices][i][j])
+					} // i
+				
+				var result = det(tempMatrix);
+				if (!fractionMode) 
+					{
+					if (sigDigMode) document.theSpreadsheet.output.value += cr+"The determinant of the above matrix is " + roundSigDig(result, numSigDigs);
+					else document.theSpreadsheet.output.value += cr+"The determinant of the above matrix is " + roundDec(result, numSigDigs);
+					} // no-fraction mode
+				else document.theSpreadsheet.output.value += cr+"The determinant of the above matrix is " + toFrac(roundSigDig(result,15), maxDenom);
+				
+			}
+			
+		} // if num = 6
+			
+}
+
+</script>
+</head>
+
+
+<title>Matrix Algebra Tool</title>
+<meta name = "Matrix Multiplication and Inverse" content = "Part of the Finite Math & Calculus resource site at http://www.ohaganbooks.com/ThirdEdSite">
+
+<body bgcolor = "lavender" text = "030000" link= "EE0088" vlink="EE0088" alink = "limegreen">
+<!---center>
+<h2><font color = "EE0088">Matrix Algebra Tool</font></h2>
+<h3><font color = "EE0088">A Utility for Evaluating Formulas with Matrices</font></h3>
+
+</center>
+
+<! *** Navigation Links ***>
+<center><img src = "elts/magentaline.gif" height = 3 width = 600></center>
+<center>
+<table cellpadding = 3>
+<tr>
+
+<td align = center>
+<a href="utilsindex.html"><img src = "ball/magentaball.gif" border = 0><br><font size = 3 color = "EE0088"><b>More On-Line Utilities</font></a>
+</td>
+
+<td align = center>
+<a href="Summary3.html"><img src = "ball/magentaball.gif" border = 0><br><font size = 3 color = "EE0088"><b>Summary of Matrix Algebra</font></a>
+</td>
+
+<td align = center>
+<a href="index.html"><img src = "ball/magentaball.gif" border = 0><br><font size = 3 color = "EE0088"><b>Student Home</font></a>
+</td>
+
+</tr>
+
+<tr>
+<td align = center> <a href="tcfinitep.html"><img src = "elts/redptr.gif" border = 0><br><b><font size = 3 color = "crimson"><i>Everything for Finite Math</i></font></a></td>
+<td align = center> <a href="tccalcp.html"><img src = "elts/yellowptr.gif" border = 0><br><b><font size = 3 color = "darkgreen"><i>Everything for Calculus</i></font></a></td>
+<td align = center> <a href="tccombop.html"><img src = "elts/blueptr.gif" border = 0><br><b><font size = 3 color = "blue"><i>Everything for Finite Math & Calculus</i></font></a></td>
+
+</tr>
+
+</table>
+<img src = "elts/magentaline.gif" height = 3 width = 600>
+</center>
+<! *** End Navigation Links ***>
+
+
+
+<p>Use of this system is pretty intuitive. Just press the "example" button to show an example of setting up a matrix calculation and instructions. Then modify it or leave it as is, and press "Compute."
+
+<p--->
+<center>
+Copyright &#169 1998 Stefan Waner and Steven R. Costenoble
+<form name="theSpreadsheet">
+
+<table  border = 1 noshade bgcolor = "FF99EE">
+<tr>
+<td align = center>
+
+Type in your matrices here. (Press "Example" to see how to set them up.)
+<br>
+<textarea name = "input" rows = 6 cols = 65>
+</textarea>
+</td>
+</tr>
+<tr><td align = center>Enter formula(s) here: &nbsp;  <input type=text size=50 value="a,b,a^-1*b" name="expr">
+<br>
+<input type="button" value = "Compute" onClick="doIt(4)"> &nbsp;
+<input type="button" value = "Example" onClick="doIt(5)"> &nbsp;
+<input type="button" value = "Erase Everything" onClick="doIt(3)"> &nbsp;
+<input type="button" value = "Determinant" onClick="doIt(6)"> &nbsp; 
+
+<br>Fraction Mode <input type="checkbox" name="fracModeButton" defaultChecked = "false"> &nbsp;
+Rounding: <input type=text size=2 value="6" name="acc"> 
+<SELECT NAME = "S" SIZE = 2 NOSCROLL> 
+	<OPTION SELECTED>significant digits
+	<OPTION>decimal places 
+	</SELECT>
+<br>
+Give me the result in Ms Word equation field format <input type="checkbox" name="msFormatButton" defaultChecked = "false">
+
+</td></tr>
+<tr>
+<td align = center>
+Result will appear here.
+
+<br>
+<textarea name = "output" rows = 6 cols = 65>
+</textarea>
+</td>
+</tr>
+</table>
+</form>
+</center>
+
+
+<!---p><font color = "EE0088">
+<b>Disclaimer: </b></font>
+Browsers sometimes crash when running computation-intensive Javascript code. 
+Make sure your important work is saved before running this utility.
+
+
+<!****endmatter*****>
+<p><CENTER>Last Updated:<I> November, 2003</I></CENTER>
+
+<center> Copyright &#169 1998 Stefan Waner and Steven R. Costenoble </Center--->
+</HTML>
+
+
+
+<!-- text below generated by server. PLEASE REMOVE --><!-- Counter/Statistics data collection code -->
+<!---script language="JavaScript" src="http://hostingprod.com/js_source/geov2.js">
+</script><script language="javascript">geovisit();</script><noscript>
+<img src="http://visit.webhosting.yahoo.com/visit.gif?us1147157148" alt="setstats" border="0" width="1" height="1">
+</noscript>
+<IMG SRC="http://geo.yahoo.com/serv?s=76001524&t=1147157148" ALT=1 WIDTH=1 HEIGHT=1--->
